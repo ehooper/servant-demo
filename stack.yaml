@@ -1,0 +1,13 @@
+flags: {}
+extra-package-dbs: []
+packages:
+- .
+system-ghc: false
+extra-deps:
+    - jose-0.6.0.3
+    - servant-auth-0.3.0.1
+    - servant-auth-server-0.3.1.0
+resolver: lts-10.4
+docker:
+    enable: false
+local-bin-path: docker

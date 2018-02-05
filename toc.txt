@@ -1,0 +1,6 @@
+src/Lib.lhs
+src/Api/Data.lhs
+src/Api/Dal.lhs
+test/Prop/Api/Dal.lhs
+test/DalTest.lhs
+test/Spec.lhs

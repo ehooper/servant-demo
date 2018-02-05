@@ -1,0 +1,548 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title>Servant Demo</title>
+  <style type="text/css">code{white-space: pre;}</style>
+  <style type="text/css">
+div.sourceCode { overflow-x: auto; }
+table.sourceCode, tr.sourceCode, td.lineNumbers, td.sourceCode {
+  margin: 0; padding: 0; vertical-align: baseline; border: none; }
+table.sourceCode { width: 100%; line-height: 100%; }
+td.lineNumbers { text-align: right; padding-right: 4px; padding-left: 4px; color: #aaaaaa; border-right: 1px solid #aaaaaa; }
+td.sourceCode { padding-left: 5px; }
+code > span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code > span.dt { color: #902000; } /* DataType */
+code > span.dv { color: #40a070; } /* DecVal */
+code > span.bn { color: #40a070; } /* BaseN */
+code > span.fl { color: #40a070; } /* Float */
+code > span.ch { color: #4070a0; } /* Char */
+code > span.st { color: #4070a0; } /* String */
+code > span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code > span.ot { color: #007020; } /* Other */
+code > span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code > span.fu { color: #06287e; } /* Function */
+code > span.er { color: #ff0000; font-weight: bold; } /* Error */
+code > span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+code > span.cn { color: #880000; } /* Constant */
+code > span.sc { color: #4070a0; } /* SpecialChar */
+code > span.vs { color: #4070a0; } /* VerbatimString */
+code > span.ss { color: #bb6688; } /* SpecialString */
+code > span.im { } /* Import */
+code > span.va { color: #19177c; } /* Variable */
+code > span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code > span.op { color: #666666; } /* Operator */
+code > span.bu { } /* BuiltIn */
+code > span.ex { } /* Extension */
+code > span.pp { color: #bc7a00; } /* Preprocessor */
+code > span.at { color: #7d9029; } /* Attribute */
+code > span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code > span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code > span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code > span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+  </style>
+</head>
+<body>
+<div id="header">
+<h1 class="title">Servant Demo</h1>
+</div>
+<div id="TOC">
+<ul>
+<li><a href="#introduction"><span class="toc-section-number">1</span> Introduction</a><ul>
+<li><a href="#preliminaries"><span class="toc-section-number">1.1</span> Preliminaries</a></li>
+<li><a href="#definitions"><span class="toc-section-number">1.2</span> Definitions</a></li>
+<li><a href="#implementation"><span class="toc-section-number">1.3</span> Implementation</a></li>
+</ul></li>
+<li><a href="#data-definitions"><span class="toc-section-number">2</span> Data Definitions</a></li>
+<li><a href="#data-access-layer"><span class="toc-section-number">3</span> Data Access Layer</a></li>
+<li><a href="#specifying-properties"><span class="toc-section-number">4</span> Specifying Properties</a></li>
+<li><a href="#testing-the-dal"><span class="toc-section-number">5</span> Testing the DAL</a></li>
+<li><a href="#testing-the-api"><span class="toc-section-number">6</span> Testing the API</a></li>
+</ul>
+</div>
+<h1 id="introduction"><span class="header-section-number">1</span> Introduction</h1>
+<p>This is a small example API server application written in Haskell. I will demonstrate a type-level API specification using <a href="http://haskell-servant.readthedocs.io/en/stable/index.html">servant</a> with JWT authentication and <a href="http://swagger.io/">Swagger</a> documentation. An independent HTTPS server can be built in the <a href="docker/">docker</a> directory of this project.</p>
+<p>All of the Haskell code in this project is written in literate Hakskell with markdown syntax and compiled into an HTML page with <a href="http://pandoc.org/">Pandoc</a>.</p>
+<p>This project was expanded from <a href="https://github.com/plow-technologies/servant-auth">this example project</a>.</p>
+<p>This first section is the main codebase for the API server application. I will go over every line of code in this module.</p>
+<h2 id="preliminaries"><span class="header-section-number">1.1</span> Preliminaries</h2>
+<p>First we need to enable some language extensions. I have rarely needed to think about them ahead of time or in detail; GHC (the compiler) will usually suggest whatever extensions you need to enable when you attempt to compile your code. In further examples these language pragmas will be hidden.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="ot">{-# LANGUAGE DataKinds           #-}</span>
+<span class="ot">{-# LANGUAGE DeriveGeneric       #-}</span>
+<span class="ot">{-# LANGUAGE OverloadedStrings   #-}</span>
+<span class="ot">{-# LANGUAGE OverloadedLists     #-}</span>
+<span class="ot">{-# LANGUAGE ScopedTypeVariables #-}</span>
+<span class="ot">{-# LANGUAGE TypeOperators       #-}</span></code></pre></div>
+<p>Next is the module definition. This module only exports three things: the entry point for starting the server independently (<code>startApp</code>), the code the run just the API (<code>serverApp</code>), and the configuration data the server needs (<code>ServerConf</code>). The latter two exports are only used for testing.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="kw">module</span> <span class="dt">Lib</span>
+    ( startApp
+    , serverApp
+    , <span class="dt">ServerConf</span>(<span class="fu">..</span>)
+    ) <span class="kw">where</span></code></pre></div>
+<p>We start the module with a list of imports. I won't go into detail about how Haskell's module system works, but as you can see, import lists can get quite large. Tools like flycheck are very helpful for managing imports.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="kw">import </span><span class="dt">GHC.Generics</span> (<span class="dt">Generic</span>)
+<span class="kw">import </span><span class="dt">Control.Lens</span> <span class="kw">hiding</span> ((.=))
+<span class="kw">import </span><span class="dt">Control.Monad.Trans</span> (liftIO)
+<span class="kw">import </span><span class="dt">Data.Aeson</span>
+<span class="kw">import </span><span class="dt">Data.Text.Internal</span> (<span class="dt">Text</span>)
+<span class="kw">import </span><span class="dt">Data.Swagger</span> <span class="kw">hiding</span> (<span class="dt">Header</span>)
+<span class="kw">import qualified</span> <span class="dt">Data.Yaml</span> <span class="kw">as</span> <span class="dt">Yaml</span>
+<span class="kw">import </span><span class="dt">Network.Wai.Handler.Warp</span>
+<span class="kw">import </span><span class="dt">Servant</span>
+<span class="kw">import </span><span class="dt">Servant.Swagger</span>
+<span class="kw">import </span><span class="dt">Servant.Auth.Server</span>
+<span class="kw">import </span><span class="dt">Data.Text.Encoding</span> (decodeUtf8)
+<span class="kw">import qualified</span> <span class="dt">Data.ByteString.Lazy</span> <span class="kw">as</span> <span class="dt">BSL</span>
+<span class="kw">import qualified</span> <span class="dt">Data.ByteString.Lazy.Char8</span> <span class="kw">as</span> <span class="dt">BSL8</span>
+<span class="kw">import </span><span class="dt">System.Log.Logger</span>
+<span class="kw">import </span><span class="dt">System.Log.Handler.Simple</span>
+<span class="kw">import </span><span class="dt">System.IO</span> (stdout)
+<span class="kw">import </span><span class="dt">Options.Applicative</span> <span class="kw">hiding</span> (info)
+<span class="kw">import qualified</span> <span class="dt">Options.Applicative</span> <span class="kw">as</span> <span class="dt">Options</span>
+<span class="kw">import </span><span class="dt">Data.Semigroup</span> ((&lt;&gt;))</code></pre></div>
+<p>We have a couple of local modules to import too. These will be expanded on in <a href="#data-definitions">Data Definitions</a> and <a href="#data-access-layer">Data Access Layer</a>.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="kw">import </span><span class="dt">Api.Data</span>
+<span class="kw">import </span><span class="dt">Api.Dal</span></code></pre></div>
+<h2 id="definitions"><span class="header-section-number">1.2</span> Definitions</h2>
+<p>In this section we will describe the objects in our application as types and defer implementations to the next section.</p>
+<p>This application will be using <a href="https://jwt.io/">JSON web tokens</a> for authentication, so we will define a data type for the contents of each token. The token will only contain the user name.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="kw">type</span> <span class="dt">UserName</span> <span class="fu">=</span> <span class="dt">Text</span>
+<span class="kw">type</span> <span class="dt">Password</span> <span class="fu">=</span> <span class="dt">Text</span>
+<span class="kw">data</span> <span class="dt">Login</span> <span class="fu">=</span> <span class="dt">Login</span> {<span class="ot"> username ::</span> <span class="dt">UserName</span>,<span class="ot"> password ::</span> <span class="dt">Password</span> }
+   <span class="kw">deriving</span> (<span class="dt">Eq</span>, <span class="dt">Show</span>, <span class="dt">Read</span>, <span class="dt">Generic</span>)
+<span class="kw">instance</span> <span class="dt">ToJSON</span> <span class="dt">Login</span>
+<span class="kw">instance</span> <span class="dt">FromJSON</span> <span class="dt">Login</span>
+<span class="kw">instance</span> <span class="dt">ToSchema</span> <span class="dt">Login</span></code></pre></div>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell">
+<span class="kw">data</span> <span class="dt">AuthUser</span> <span class="fu">=</span> <span class="dt">AuthUser</span> {<span class="ot"> user ::</span> <span class="dt">UserName</span> }
+   <span class="kw">deriving</span> (<span class="dt">Eq</span>, <span class="dt">Show</span>, <span class="dt">Read</span>, <span class="dt">Generic</span>)
+
+<span class="kw">instance</span> <span class="dt">ToJSON</span> <span class="dt">AuthUser</span>
+<span class="kw">instance</span> <span class="dt">FromJSON</span> <span class="dt">AuthUser</span>
+<span class="kw">instance</span> <span class="dt">ToJWT</span> <span class="dt">AuthUser</span>
+<span class="kw">instance</span> <span class="dt">FromJWT</span> <span class="dt">AuthUser</span></code></pre></div>
+<p>A constant for our logs.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="ot">appLog ::</span> <span class="dt">String</span>
+appLog <span class="fu">=</span> <span class="st">&quot;ServantTest&quot;</span></code></pre></div>
+<p>And a simple configuration for this server:</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">ServerConf</span> <span class="fu">=</span> <span class="dt">ServerConf</span> {<span class="ot"> env ::</span> <span class="dt">String</span> } <span class="kw">deriving</span> (<span class="dt">Show</span>, <span class="dt">Generic</span>)
+<span class="kw">instance</span> <span class="dt">FromJSON</span> <span class="dt">ServerConf</span></code></pre></div>
+<p>Our API begins with a type-level Servant specification. These type definitions are schemas for our API and its subcomponents.</p>
+We will create a new type for JwtToken, which is just a type-level &quot;wrapper&quot; around a string. This is a good and cheap way to document the meaning of a piece of data that is implemented with a simple type.
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="kw">newtype</span> <span class="dt">JwtToken</span> <span class="fu">=</span> <span class="dt">JwtToken</span> <span class="dt">Text</span> <span class="kw">deriving</span> (<span class="dt">Eq</span>, <span class="dt">Show</span>, <span class="dt">Generic</span>)
+<span class="kw">instance</span> <span class="dt">ToJSON</span> <span class="dt">JwtToken</span>
+<span class="kw">instance</span> <span class="dt">ToSchema</span> <span class="dt">JwtToken</span>
+
+<span class="kw">type</span> <span class="dt">LoginAPI</span> <span class="fu">=</span>
+ <span class="st">&quot;login&quot;</span>
+     <span class="fu">:&gt;</span> <span class="dt">ReqBody</span> <span class="ch">&#39;[JSON] Login</span>
+     <span class="fu">:&gt;</span> <span class="dt">Post</span> <span class="ch">&#39;[JSON] JwtToken</span>
+
+<span class="kw">type</span> <span class="dt">SwaggerAPI</span> <span class="fu">=</span> <span class="st">&quot;swagger.json&quot;</span> <span class="fu">:&gt;</span> <span class="dt">Get</span> <span class="ch">&#39;[JSON] Swagger</span>
+
+<span class="kw">type</span> <span class="dt">UserAPI</span> <span class="fu">=</span>
+  <span class="st">&quot;users&quot;</span> <span class="fu">:&gt;</span> <span class="dt">Get</span> <span class="ch">&#39;[JSON] (ApiResponse [User]) :&lt;|&gt;</span>
+  <span class="st">&quot;user&quot;</span> <span class="fu">:&gt;</span> <span class="dt">ReqBody</span> <span class="ch">&#39;[JSON] NewUser :&gt; Post &#39;</span>[<span class="dt">JSON</span>] (<span class="dt">ApiResponse</span> <span class="dt">UserId</span>)
+
+<span class="kw">type</span> <span class="dt">ProtectedAPI</span> <span class="fu">=</span> <span class="dt">SwaggerAPI</span> <span class="fu">:&lt;|&gt;</span> <span class="dt">UserAPI</span></code></pre></div>
+<p>The main API combines all of the API sections and has an argument for the authentication system.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="kw">type</span> <span class="dt">API</span> auths <span class="fu">=</span> (<span class="dt">Auth</span> auths <span class="dt">AuthUser</span> <span class="fu">:&gt;</span> <span class="dt">ProtectedAPI</span>) <span class="fu">:&lt;|&gt;</span> <span class="dt">LoginAPI</span></code></pre></div>
+<p>While we're at it, we'll define the Swagger specification for the user API.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="ot">authDef ::</span> <span class="dt">SecurityScheme</span>
+authDef <span class="fu">=</span> <span class="dt">SecurityScheme</span> (<span class="dt">SecuritySchemeApiKey</span> (<span class="dt">ApiKeyParams</span> <span class="st">&quot;Authorization&quot;</span> <span class="dt">ApiKeyHeader</span>)) <span class="dt">Nothing</span>
+
+<span class="ot">swaggerSpec ::</span> <span class="dt">Swagger</span>
+swaggerSpec <span class="fu">=</span> toSwagger apiDef
+  <span class="fu">&amp;</span> info<span class="fu">.</span>title <span class="fu">.~</span> <span class="st">&quot;Servant example&quot;</span>
+  <span class="fu">&amp;</span> info<span class="fu">.</span>version <span class="fu">.~</span> <span class="st">&quot;0.1&quot;</span>
+  <span class="fu">&amp;</span> info<span class="fu">.</span>description <span class="fu">?~</span> <span class="st">&quot;This is an API that tests swagger integration&quot;</span>
+  <span class="fu">&amp;</span> info<span class="fu">.</span>license <span class="fu">?~</span> (<span class="st">&quot;BSD3&quot;</span> <span class="fu">&amp;</span> url <span class="fu">?~</span> <span class="dt">URL</span> <span class="st">&quot;http://opensource.org/licenses/BSD-3-Clause&quot;</span>)
+  <span class="fu">&amp;</span> host <span class="fu">?~</span> <span class="st">&quot;localhost:8080&quot;</span>
+  <span class="fu">&amp;</span> schemes <span class="fu">?~</span> [<span class="dt">Https</span>, <span class="dt">Http</span>]
+  <span class="fu">&amp;</span> securityDefinitions <span class="fu">.~</span> [(<span class="st">&quot;Bearer&quot;</span>, authDef)]
+  <span class="fu">&amp;</span> (userOps <span class="fu">.</span> security <span class="fu">.~</span> [<span class="dt">SecurityRequirement</span> [(<span class="st">&quot;Bearer&quot;</span>, [])]])
+  <span class="kw">where</span> apiDef <span class="fu">=</span> <span class="dt">Proxy</span><span class="ot"> ::</span> <span class="dt">Proxy</span> (<span class="dt">LoginAPI</span> <span class="fu">:&lt;|&gt;</span> <span class="dt">UserAPI</span>)
+        userOps <span class="fu">=</span> subOperations (<span class="dt">Proxy</span><span class="ot"> ::</span> <span class="dt">Proxy</span> <span class="dt">UserAPI</span>) apiDef</code></pre></div>
+<h2 id="implementation"><span class="header-section-number">1.3</span> Implementation</h2>
+<p>Now we create type-checked implementations of the Servant definitions from above. Notice that these objects have requirements of their own.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="ot">login ::</span> <span class="dt">JWTSettings</span> <span class="ot">-&gt;</span> <span class="dt">Server</span> <span class="dt">LoginAPI</span>
+login jwtSettings (<span class="dt">Login</span> usr<span class="fu">@</span><span class="st">&quot;user&quot;</span> <span class="st">&quot;password&quot;</span>) <span class="fu">=</span> <span class="kw">do</span>
+  token <span class="ot">&lt;-</span> liftIO <span class="fu">$</span> makeJWT (<span class="dt">AuthUser</span> usr) jwtSettings <span class="dt">Nothing</span>
+  liftIO <span class="fu">$</span> debugM appLog <span class="st">&quot;Created token&quot;</span>
+  <span class="kw">case</span> token <span class="kw">of</span>
+    (<span class="dt">Left</span> e) <span class="ot">-&gt;</span> <span class="kw">do</span>
+      liftIO <span class="fu">$</span> criticalM appLog <span class="fu">$</span> <span class="st">&quot;Error creating token: &quot;</span> <span class="fu">++</span> show e
+      throwError <span class="fu">$</span> err500 { errBody <span class="fu">=</span> <span class="st">&quot;error creating authentication token&quot;</span> }
+    (<span class="dt">Right</span> tok) <span class="ot">-&gt;</span> return <span class="fu">$</span> <span class="dt">JwtToken</span> (decodeUtf8 <span class="fu">.</span> BSL.toStrict <span class="fu">$</span> tok)
+login _ _ <span class="fu">=</span> throwError err401
+
+<span class="ot">userApi ::</span> (<span class="dt">UserDal</span> dal) <span class="ot">=&gt;</span> (<span class="dt">DalProvider</span> dal) <span class="ot">-&gt;</span> <span class="dt">Server</span> <span class="dt">UserAPI</span>
+userApi dal <span class="fu">=</span>
+  liftIO (<span class="dt">SuccessResponse</span> <span class="fu">&lt;$&gt;</span> (withProvider dal getAllUsers)) <span class="fu">:&lt;|&gt;</span>
+  (\user <span class="ot">-&gt;</span> liftIO <span class="fu">$</span> <span class="dt">SuccessResponse</span> <span class="fu">&lt;$&gt;</span> withProvider dal (addUser user))
+
+<span class="ot">protected ::</span> (<span class="dt">UserDal</span> dal) <span class="ot">=&gt;</span> (<span class="dt">DalProvider</span> dal) <span class="ot">-&gt;</span> <span class="dt">AuthResult</span> <span class="dt">AuthUser</span> <span class="ot">-&gt;</span> <span class="dt">Server</span> <span class="dt">ProtectedAPI</span>
+protected dal (<span class="dt">Authenticated</span> _) <span class="fu">=</span> return swaggerSpec <span class="fu">:&lt;|&gt;</span> userApi dal
+protected _ _ <span class="fu">=</span> throwAll err401</code></pre></div>
+<p>Finally, the implementation of the API server:</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="ot">server ::</span> (<span class="dt">UserDal</span> dal) <span class="ot">=&gt;</span> <span class="dt">JWTSettings</span> <span class="ot">-&gt;</span> (<span class="dt">DalProvider</span> dal) <span class="ot">-&gt;</span> <span class="dt">Server</span> (<span class="dt">API</span> auths)
+server jwts dal <span class="fu">=</span> (protected dal) <span class="fu">:&lt;|&gt;</span> login jwts</code></pre></div>
+<p>With the excellent optparse-applicative library, we can specify command-line arguments for our application in a concise and type-safe way.</p>
+<p>We will have two execution &quot;modes&quot;: one to start the server with optional arguments for a port and configuration file, and another to dump the Swagger specificationof the API to standard output.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">Mode</span> <span class="fu">=</span> <span class="dt">Serve</span> <span class="dt">Port</span> <span class="dt">String</span> <span class="fu">|</span> <span class="dt">DumpSwagger</span></code></pre></div>
+<p>We can define a parser for the server mode and its arguments by itself, and then combine it with parsers for other modes.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="ot">serveOpts ::</span> <span class="dt">Parser</span> <span class="dt">Mode</span>
+serveOpts <span class="fu">=</span> <span class="dt">Serve</span>
+            <span class="fu">&lt;$&gt;</span> option auto
+            ( long <span class="st">&quot;port&quot;</span>
+              <span class="fu">&lt;&gt;</span> short <span class="ch">&#39;p&#39;</span>
+              <span class="fu">&lt;&gt;</span> help <span class="st">&quot;Port to run the server on&quot;</span>
+              <span class="fu">&lt;&gt;</span> showDefault
+              <span class="fu">&lt;&gt;</span> value <span class="dv">8080</span>
+              <span class="fu">&lt;&gt;</span> metavar <span class="st">&quot;PORT&quot;</span> )
+            <span class="fu">&lt;*&gt;</span> strOption
+            ( long <span class="st">&quot;config&quot;</span>
+              <span class="fu">&lt;&gt;</span> short <span class="ch">&#39;c&#39;</span>
+              <span class="fu">&lt;&gt;</span> help <span class="st">&quot;Server configuration file&quot;</span>
+              <span class="fu">&lt;&gt;</span> showDefault
+              <span class="fu">&lt;&gt;</span> value <span class="st">&quot;config.yml&quot;</span>
+              <span class="fu">&lt;&gt;</span> metavar <span class="st">&quot;FILE&quot;</span> )</code></pre></div>
+<p>The swagger dump mode is set by a flag - note that alternative operator (<code>&lt;|&gt;</code>) will actually enforce the mutual-exclusion constraint on these modes, so server-mode arguments cannot be mixed with the dump-swagger flag.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="ot">progOpts ::</span> <span class="dt">Parser</span> <span class="dt">Mode</span>
+progOpts <span class="fu">=</span> serveOpts
+           <span class="fu">&lt;|&gt;</span> flag&#39; <span class="dt">DumpSwagger</span> (long <span class="st">&quot;dump-swagger&quot;</span> <span class="fu">&lt;&gt;</span> help <span class="st">&quot;Dump swagger.json&quot;</span>)</code></pre></div>
+<p>The code to start the server is a bit complicated, so we will abstract it into its own function which takes the port number and configuration file as arguments.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="ot">serverApp ::</span> <span class="dt">ServerConf</span> <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">Application</span>
+serverApp config <span class="fu">=</span> <span class="kw">do</span></code></pre></div>
+<p>We configure JWT at runtime.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell">  key <span class="ot">&lt;-</span> generateKey
+  <span class="kw">let</span> jwtCfg <span class="fu">=</span> defaultJWTSettings key
+      cfg <span class="fu">=</span> defaultCookieSettings <span class="fu">:.</span> jwtCfg <span class="fu">:.</span> <span class="dt">EmptyContext</span>
+      api <span class="fu">=</span> <span class="dt">Proxy</span><span class="ot"> ::</span> <span class="dt">Proxy</span> (<span class="dt">API</span> <span class="ch">&#39;[JWT])</span></code></pre></div>
+<p>Load the config.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell">  <span class="kw">let</span> withDal provider <span class="fu">=</span> server jwtCfg provider
+  app <span class="ot">&lt;-</span> <span class="kw">case</span> config <span class="kw">of</span>
+    <span class="co">-- In &quot;default&quot; mode, use an empty dummy DAL.</span>
+    (<span class="dt">ServerConf</span> <span class="st">&quot;default&quot;</span>) <span class="ot">-&gt;</span> withDal <span class="fu">&lt;$&gt;</span> initMockUserDal <span class="dv">1</span> []
+    <span class="co">-- In &quot;test&quot; mode, use the dummy DAL with some example data.</span>
+    (<span class="dt">ServerConf</span> <span class="st">&quot;test&quot;</span>) <span class="ot">-&gt;</span> withDal <span class="fu">&lt;$&gt;</span> initMockUserDal <span class="dv">3</span> [<span class="dt">User</span> (<span class="dt">UserId</span> <span class="dv">1</span>) <span class="st">&quot;Isaac&quot;</span> <span class="st">&quot;Newton&quot;</span> , <span class="dt">User</span> (<span class="dt">UserId</span> <span class="dv">2</span>) <span class="st">&quot;Albert&quot;</span> <span class="st">&quot;Einstein&quot;</span>]
+    <span class="co">-- Otherwise use the &quot;real&quot; DAL.</span>
+    _ <span class="ot">-&gt;</span> withDal <span class="fu">&lt;$&gt;</span> initSqlUserDal</code></pre></div>
+<p>Start the server.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell">  return <span class="fu">$</span> serveWithContext api cfg app</code></pre></div>
+<p>In the application entry point, we parse the command-line arguments and run the appropriate execution mode.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="ot">startApp ::</span> <span class="dt">IO</span> ()
+startApp <span class="fu">=</span> <span class="kw">do</span></code></pre></div>
+<p>Set up the logger.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell">  stdoutHandler <span class="ot">&lt;-</span> verboseStreamHandler stdout <span class="dt">DEBUG</span>
+  updateGlobalLogger rootLoggerName removeHandler <span class="co">-- disable the default log handler since we have our own</span>
+  updateGlobalLogger appLog (setLevel <span class="dt">DEBUG</span> <span class="fu">.</span> setHandlers [stdoutHandler])</code></pre></div>
+<p>Parse the config file.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell">  mode <span class="ot">&lt;-</span> execParser (Options.info (progOpts <span class="fu">&lt;**&gt;</span> helper) ( fullDesc <span class="fu">&lt;&gt;</span> progDesc <span class="st">&quot;Servant demo server&quot;</span> ))
+  <span class="kw">case</span> mode <span class="kw">of</span>
+    <span class="dt">Serve</span> port configFile <span class="ot">-&gt;</span> <span class="kw">do</span>
+      parsedFile <span class="ot">&lt;-</span> Yaml.decodeFileEither configFile
+      config <span class="ot">&lt;-</span>
+        <span class="kw">case</span> parsedFile <span class="kw">of</span>
+          <span class="dt">Left</span> e <span class="ot">-&gt;</span> <span class="kw">do</span> criticalM appLog <span class="fu">$</span> <span class="st">&quot;Failed to load config: &quot;</span> <span class="fu">++</span> show e
+                       return <span class="fu">$</span> <span class="dt">ServerConf</span> <span class="st">&quot;default&quot;</span>
+          <span class="dt">Right</span> c <span class="ot">-&gt;</span> return c</code></pre></div>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell">      debugM appLog (<span class="st">&quot;Starting server on port &quot;</span> <span class="fu">++</span> show port)
+      app <span class="ot">&lt;-</span> serverApp config
+      run port app
+    <span class="dt">DumpSwagger</span> <span class="ot">-&gt;</span> BSL8.putStrLn <span class="fu">$</span> encode swaggerSpec</code></pre></div>
+<h1 id="data-definitions"><span class="header-section-number">2</span> Data Definitions</h1>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="ot">{-# LANGUAGE DeriveGeneric   #-}</span>
+<span class="ot">{-# LANGUAGE TemplateHaskell #-}</span>
+<span class="ot">{-# LANGUAGE OverloadedStrings   #-}</span>
+<span class="ot">{-# LANGUAGE OverloadedLists   #-}</span>
+<span class="ot">{-# LANGUAGE ScopedTypeVariables   #-}</span>
+<span class="ot">{-# LANGUAGE FlexibleInstances   #-}</span>
+<span class="ot">{-# LANGUAGE StrictData   #-}</span>
+<span class="ot">{-# LANGUAGE GeneralizedNewtypeDeriving #-}</span>
+<span class="ot">{-# LANGUAGE DuplicateRecordFields #-}</span>
+<span class="kw">module</span> <span class="dt">Api.Data</span>
+  ( <span class="dt">User</span>(<span class="fu">..</span>)
+  , <span class="dt">NewUser</span>(<span class="fu">..</span>)
+  , <span class="dt">UserId</span>(<span class="fu">..</span>)
+  , <span class="dt">ApiResponse</span>(<span class="fu">..</span>)
+  ) <span class="kw">where</span>
+
+<span class="kw">import </span><span class="dt">GHC.Generics</span> (<span class="dt">Generic</span>)
+<span class="kw">import </span><span class="dt">Control.Lens</span> <span class="kw">hiding</span> ((.=))
+<span class="kw">import </span><span class="dt">Data.Aeson</span>
+<span class="kw">import </span><span class="dt">Data.Aeson.TH</span>
+<span class="kw">import </span><span class="dt">Data.Proxy</span>
+<span class="kw">import </span><span class="dt">Data.Text</span> (<span class="dt">Text</span>, append)
+<span class="kw">import </span><span class="dt">Data.Swagger</span> <span class="kw">hiding</span> (<span class="dt">Header</span>)
+<span class="kw">import </span><span class="dt">Servant.Auth.Server</span> (<span class="dt">Default</span>(..))
+<span class="kw">import </span><span class="dt">Database.SQLite.Simple</span>
+<span class="kw">import </span><span class="dt">Database.SQLite.Simple.FromField</span>
+<span class="kw">import </span><span class="dt">Database.SQLite.Simple.ToField</span>
+
+<span class="kw">newtype</span> <span class="dt">UserId</span> <span class="fu">=</span> <span class="dt">UserId</span> <span class="dt">Int</span> <span class="kw">deriving</span> (<span class="dt">Eq</span>, <span class="dt">Show</span>, <span class="dt">FromField</span>, <span class="dt">ToField</span>, <span class="dt">Generic</span>)
+<span class="kw">instance</span> <span class="dt">ToSchema</span> <span class="dt">UserId</span>
+<span class="kw">instance</span> <span class="dt">FromJSON</span> <span class="dt">UserId</span>
+<span class="kw">instance</span> <span class="dt">ToJSON</span> <span class="dt">UserId</span>
+
+<span class="kw">data</span> <span class="dt">User</span> <span class="fu">=</span> <span class="dt">User</span>
+  {<span class="ot"> userId    ::</span> <span class="dt">UserId</span>
+  ,<span class="ot"> firstName ::</span> <span class="dt">Text</span>
+  ,<span class="ot"> lastName  ::</span> <span class="dt">Text</span>
+  } <span class="kw">deriving</span> (<span class="dt">Eq</span>, <span class="dt">Show</span>, <span class="dt">Generic</span>)
+
+<span class="kw">instance</span> <span class="dt">FromRow</span> <span class="dt">User</span> <span class="kw">where</span>
+  fromRow <span class="fu">=</span> <span class="dt">User</span> <span class="fu">&lt;$&gt;</span> field <span class="fu">&lt;*&gt;</span> field <span class="fu">&lt;*&gt;</span> field
+
+<span class="kw">instance</span> <span class="dt">ToSchema</span> <span class="dt">User</span> <span class="kw">where</span>
+  declareNamedSchema proxy <span class="fu">=</span> genericDeclareNamedSchema defaultSchemaOptions proxy
+    <span class="fu">&amp;</span> mapped<span class="fu">.</span>schema<span class="fu">.</span>description <span class="fu">?~</span> <span class="st">&quot;User schema&quot;</span>
+
+<span class="kw">instance</span> <span class="dt">Default</span> <span class="dt">User</span> <span class="kw">where</span>
+  def <span class="fu">=</span> <span class="dt">User</span> (<span class="dt">UserId</span> <span class="dv">0</span>) <span class="st">&quot;Test&quot;</span> <span class="st">&quot;User&quot;</span>
+
+<span class="fu">$</span>(deriveJSON defaultOptions <span class="ch">&#39;&#39;</span><span class="dt">User</span>)
+
+<span class="kw">data</span> <span class="dt">NewUser</span> <span class="fu">=</span> <span class="dt">NewUser</span>
+  {<span class="ot"> firstName ::</span> <span class="dt">Text</span>
+  ,<span class="ot"> lastName  ::</span> <span class="dt">Text</span>
+  } <span class="kw">deriving</span> (<span class="dt">Eq</span>, <span class="dt">Show</span>, <span class="dt">Generic</span>)
+
+<span class="kw">instance</span> <span class="dt">ToSchema</span> <span class="dt">NewUser</span> <span class="kw">where</span>
+  declareNamedSchema <span class="fu">=</span> genericDeclareNamedSchema defaultSchemaOptions
+
+<span class="fu">$</span>(deriveJSON defaultOptions <span class="ch">&#39;&#39;</span><span class="dt">NewUser</span>)
+
+<span class="kw">data</span> <span class="dt">ApiResponse</span> a <span class="fu">=</span> <span class="dt">SuccessResponse</span> a <span class="fu">|</span> <span class="dt">ErrorResponse</span> <span class="dt">Text</span> <span class="kw">deriving</span> (<span class="dt">Eq</span>, <span class="dt">Show</span>, <span class="dt">Generic</span>)
+
+<span class="kw">instance</span> (<span class="dt">ToJSON</span> a) <span class="ot">=&gt;</span> <span class="dt">ToJSON</span> (<span class="dt">ApiResponse</span> a) <span class="kw">where</span>
+  toJSON (<span class="dt">SuccessResponse</span> x) <span class="fu">=</span> object [<span class="st">&quot;status&quot;</span> <span class="fu">.=</span> <span class="dt">String</span> <span class="st">&quot;success&quot;</span>, <span class="st">&quot;data&quot;</span> <span class="fu">.=</span> toJSON x]
+  toJSON (<span class="dt">ErrorResponse</span> msg) <span class="fu">=</span> object [<span class="st">&quot;status&quot;</span> <span class="fu">.=</span> <span class="dt">String</span> <span class="st">&quot;error&quot;</span>, <span class="st">&quot;message&quot;</span> <span class="fu">.=</span> msg]</code></pre></div>
+<p>The Swagger models are automatically generated for the main data types, but since the API responds with <code>ApiResponse</code> data, we must define rules for documenting an <code>ApiResponse t</code> where <code>t</code> has its own Swagger model. I tried to define a ToSchema instance over the generic type <code>ApiResponse t</code>, but that proved to be far more complicated than I was willing to deal with. Instead, we can make implementations for each instance of <code>ApiResponse t</code> that we actually use with minor boilerplate.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="kw">instance</span> <span class="dt">ToSchema</span> (<span class="dt">ApiResponse</span> [<span class="dt">User</span>]) <span class="kw">where</span>
+  declareNamedSchema _ <span class="fu">=</span> declareSuccessResponse <span class="st">&quot;Users&quot;</span> (<span class="dt">Proxy</span><span class="ot"> ::</span> <span class="dt">Proxy</span> [<span class="dt">User</span>])
+
+<span class="kw">instance</span> <span class="dt">ToSchema</span> (<span class="dt">ApiResponse</span> <span class="dt">UserId</span>) <span class="kw">where</span>
+  declareNamedSchema _ <span class="fu">=</span> declareSuccessResponse <span class="st">&quot;UserId&quot;</span> (<span class="dt">Proxy</span><span class="ot"> ::</span> <span class="dt">Proxy</span> <span class="dt">UserId</span>)</code></pre></div>
+<p>Swagger 2.0 cannot represent sum types, so for documentation purposes we will simply display the successful response defined in the <code>ToJSON</code> instance of <code>ApiResponse</code>.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell">declareSuccessResponse dataName proxy <span class="fu">=</span> <span class="kw">do</span>
+  dataRef <span class="ot">&lt;-</span> declareSchemaRef proxy
+  <span class="kw">let</span> statusParam <span class="fu">=</span> sketchStrictSchema (<span class="st">&quot;success&quot;</span><span class="ot"> ::</span> <span class="dt">Text</span>)
+  return <span class="fu">$</span> <span class="dt">NamedSchema</span> (<span class="dt">Just</span> <span class="fu">$</span> append dataName <span class="st">&quot;Response&quot;</span>)
+    <span class="fu">$</span> mempty <span class="co">-- &quot;m(onoid) empty&quot;, a simple construct despite a possibly intimidating name: it&#39;s just a blank starting point for the definition.</span>
+    <span class="fu">&amp;</span> type_ <span class="fu">.~</span> <span class="dt">SwaggerObject</span>
+    <span class="fu">&amp;</span> required <span class="fu">.~</span> [<span class="st">&quot;status&quot;</span>, <span class="st">&quot;data&quot;</span>]
+    <span class="fu">&amp;</span> properties <span class="fu">.~</span> [ (<span class="st">&quot;status&quot;</span>, <span class="dt">Inline</span> statusParam) , (<span class="st">&quot;data&quot;</span>, dataRef) ]</code></pre></div>
+<h1 id="data-access-layer"><span class="header-section-number">3</span> Data Access Layer</h1>
+<!--
+This puts the code in an HTML comment in the Pandoc output of this file.
+
+\begin{code}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GADTs #-}
+\end{code}
+-->
+<p>We can use typeclasses in Haskell to specify interfaces for multiple types. We can use this to specify a set of actions for our DAL.</p>
+<p>The typeclass is UserDal, and we have two implementations for it: a mock DAL and a SQL DAL using Sqlite.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="kw">module</span> <span class="dt">Api.Dal</span>
+  ( <span class="dt">UserDal</span>(<span class="fu">..</span>)
+  , <span class="dt">MockUserDal</span>
+  , <span class="dt">SqlUserDal</span>
+  , <span class="dt">DalProvider</span>
+  , withProvider
+  , initMockUserDal
+  , initSqlUserDal
+  ) <span class="kw">where</span></code></pre></div>
+<!--
+\begin{code}
+import Control.Concurrent.MVar
+import Database.SQLite.Simple
+
+import Api.Data
+\end{code}
+-->
+<p>Our interface is very simple. Any type implementing the <code>UserDal</code> interface provides these three function, which take a value of type <code>a</code> (a database resource), and performs an IO action with the result.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="kw">class</span> <span class="dt">UserDal</span> a <span class="kw">where</span>
+<span class="ot">  getUser ::</span> <span class="dt">UserId</span> <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">IO</span> (<span class="dt">Maybe</span> <span class="dt">User</span>)
+<span class="ot">  getAllUsers ::</span> a <span class="ot">-&gt;</span> <span class="dt">IO</span> [<span class="dt">User</span>]
+<span class="ot">  addUser ::</span> <span class="dt">NewUser</span> <span class="ot">-&gt;</span> a <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">UserId</span></code></pre></div>
+<p>Rather than exporting relatively low-level constructors for each UserDal instance, we can manage database resources with another type, the <code>DalProvider</code>. This gives us flexibility in implementation and allows us to control how resources are used (for example, to prevent connections from being left open).</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="kw">data</span> <span class="dt">DalProvider</span> d <span class="kw">where</span>
+  <span class="dt">MockUserDalProvider</span><span class="ot"> ::</span> <span class="dt">MockUserDal</span> <span class="ot">-&gt;</span> <span class="dt">DalProvider</span> <span class="dt">MockUserDal</span>
+  <span class="dt">SqlUserDalProvider</span><span class="ot"> ::</span> <span class="dt">DalProvider</span> <span class="dt">SqlUserDal</span></code></pre></div>
+<p><code>withProvider</code> is the only way to use a database resource at the top level.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="ot">withProvider ::</span> <span class="dt">DalProvider</span> d <span class="ot">-&gt;</span> (d <span class="ot">-&gt;</span> <span class="dt">IO</span> a) <span class="ot">-&gt;</span> <span class="dt">IO</span> a
+withProvider (<span class="dt">MockUserDalProvider</span> dal) f <span class="fu">=</span> f dal
+withProvider <span class="dt">SqlUserDalProvider</span> f <span class="fu">=</span> withConnection <span class="st">&quot;file::memory:?cache=shared&quot;</span> (f <span class="fu">.</span> <span class="dt">SqlUserDal</span>)</code></pre></div>
+<p>We'll start with the mock DAL. It is simply a (thread safe) mutable IO variable with a list of users and a counter for the next user id.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="kw">newtype</span> <span class="dt">MockUserDal</span> <span class="fu">=</span> <span class="dt">MockUserDal</span> (<span class="dt">MVar</span> (<span class="dt">Int</span>, [<span class="dt">User</span>]))
+
+<span class="ot">initMockUserDal ::</span> <span class="dt">Int</span> <span class="ot">-&gt;</span> [<span class="dt">User</span>] <span class="ot">-&gt;</span> <span class="dt">IO</span> (<span class="dt">DalProvider</span> <span class="dt">MockUserDal</span>)
+initMockUserDal i us <span class="fu">=</span> <span class="kw">do</span>
+  initialState <span class="ot">&lt;-</span> <span class="dt">MockUserDal</span> <span class="fu">&lt;$&gt;</span> newMVar (i, us)
+  return <span class="fu">$</span> <span class="dt">MockUserDalProvider</span> initialState</code></pre></div>
+<p>The implementation.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="kw">instance</span> <span class="dt">UserDal</span> <span class="dt">MockUserDal</span> <span class="kw">where</span>
+  getUser i (<span class="dt">MockUserDal</span> r) <span class="fu">=</span> safeHead <span class="fu">.</span> filter (\u <span class="ot">-&gt;</span> userId u <span class="fu">==</span> i) <span class="fu">.</span> snd <span class="fu">&lt;$&gt;</span> readMVar r
+
+  getAllUsers (<span class="dt">MockUserDal</span> r) <span class="fu">=</span> snd <span class="fu">&lt;$&gt;</span> readMVar r
+
+  addUser (<span class="dt">NewUser</span> fn ln) (<span class="dt">MockUserDal</span> r) <span class="fu">=</span> <span class="kw">do</span>
+    (nextId, users) <span class="ot">&lt;-</span> takeMVar r
+    <span class="kw">let</span> uid <span class="fu">=</span> <span class="dt">UserId</span> nextId
+    putMVar r (nextId <span class="fu">+</span> <span class="dv">1</span>, <span class="dt">User</span> uid fn ln <span class="fu">:</span> users)
+    return uid</code></pre></div>
+<p><code>safeHead</code> is a total version of the <code>head</code> function.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="ot">safeHead ::</span> [a] <span class="ot">-&gt;</span> <span class="dt">Maybe</span> a
+safeHead [] <span class="fu">=</span> <span class="dt">Nothing</span>
+safeHead (x<span class="fu">:</span>_) <span class="fu">=</span> <span class="dt">Just</span> x</code></pre></div>
+<p>An SQLite implementation.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="kw">newtype</span> <span class="dt">SqlUserDal</span> <span class="fu">=</span> <span class="dt">SqlUserDal</span> <span class="dt">Connection</span>
+
+<span class="ot">initSqlUserDal ::</span> <span class="dt">IO</span> (<span class="dt">DalProvider</span> <span class="dt">SqlUserDal</span>)
+initSqlUserDal <span class="fu">=</span> <span class="kw">do</span>
+  conn <span class="ot">&lt;-</span> open <span class="st">&quot;file::memory:?cache=shared&quot;</span>
+  execute_ conn <span class="st">&quot;CREATE TABLE user(user_id INTEGER PRIMARY KEY, first_name TEXT NOT NULL, last_name TEXT NOT NULL)&quot;</span>
+  return <span class="dt">SqlUserDalProvider</span>
+
+<span class="kw">instance</span> <span class="dt">UserDal</span> <span class="dt">SqlUserDal</span> <span class="kw">where</span>
+  getUser i (<span class="dt">SqlUserDal</span> c) <span class="fu">=</span> safeHead <span class="fu">&lt;$&gt;</span> query c <span class="st">&quot;SELECT user_id, first_name, last_name FROM user WHERE user_id = ?&quot;</span> (<span class="dt">Only</span> i)
+
+  getAllUsers (<span class="dt">SqlUserDal</span> c) <span class="fu">=</span> query_ c <span class="st">&quot;SELECT user_id, first_name, last_name FROM user&quot;</span>
+
+  addUser (<span class="dt">NewUser</span> fn ln) (<span class="dt">SqlUserDal</span> c) <span class="fu">=</span> <span class="kw">do</span>
+    execute c <span class="st">&quot;INSERT INTO user(first_name, last_name) VALUES (?, ?)&quot;</span> [fn, ln]
+    <span class="dt">UserId</span> <span class="fu">.</span> fromIntegral <span class="fu">&lt;$&gt;</span> lastInsertRowId c</code></pre></div>
+<h1 id="specifying-properties"><span class="header-section-number">4</span> Specifying Properties</h1>
+<p>Typed (pure) functional programming allows us to express properties of our software with types. Here we have simple boolean propositions, but this infrastructure can be used to express sophisticated propositions and their proofs with theorem provers such as Coq.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="kw">module</span> <span class="dt">Prop.Api.Dal</span> <span class="kw">where</span></code></pre></div>
+<!--
+\begin{code}
+import Control.Monad (foldM)
+import Data.List (nub)
+import Api.Data
+import Api.Dal
+\end{code}
+-->
+<p>Because of this, we can separate properties of our system into a list of predicates.</p>
+<p>We use <code>user_in_user_list</code> to assert whether a user is in the user database. This is an <code>IO Bool</code> rather than just a <code>Bool</code> because we must interact with the database to get the answer.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="ot">user_in_user_list ::</span> (<span class="dt">UserDal</span> dal) <span class="ot">=&gt;</span> <span class="dt">User</span> <span class="ot">-&gt;</span> dal <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">Bool</span>
+user_in_user_list u dal <span class="fu">=</span> <span class="kw">do</span>
+  result <span class="ot">&lt;-</span> getUser (userId u) dal
+  return <span class="fu">$</span> <span class="kw">case</span> result <span class="kw">of</span>
+             <span class="dt">Just</span> u&#39; <span class="fu">|</span> u&#39; <span class="fu">==</span> u <span class="ot">-&gt;</span> <span class="dt">True</span>
+             _ <span class="ot">-&gt;</span> <span class="dt">False</span></code></pre></div>
+<p>One property we want to hold for our DAL at all times is that all users returned from the <code>getAllUsers</code> function are, in fact, valid users in the database. We can use the <code>user_in_user_list</code> to assert each individual user is valid and use <code>foldM</code> to apply it over the user list.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="ot">user_list_has_valid_users ::</span> (<span class="dt">UserDal</span> dal) <span class="ot">=&gt;</span> dal <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">Bool</span>
+user_list_has_valid_users dal <span class="fu">=</span> <span class="kw">do</span>
+  users <span class="ot">&lt;-</span> getAllUsers dal
+  foldM (\rest u <span class="ot">-&gt;</span> (<span class="fu">&amp;&amp;</span> rest) <span class="fu">&lt;$&gt;</span> user_in_user_list u dal) <span class="dt">True</span> users</code></pre></div>
+<p>After a user is added to the database, it should certainly be in the database.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="ot">new_user_added ::</span> (<span class="dt">UserDal</span> dal) <span class="ot">=&gt;</span> <span class="dt">NewUser</span> <span class="ot">-&gt;</span> dal <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">Bool</span>
+new_user_added nu<span class="fu">@</span>(<span class="dt">NewUser</span> fn ln) dal <span class="fu">=</span> <span class="kw">do</span>
+  uid <span class="ot">&lt;-</span> addUser nu dal
+  user_in_user_list (<span class="dt">User</span> uid fn ln) dal</code></pre></div>
+<p>The set of user ids should always be unique. We can assert this by getting the list of all user ids and checking that removing duplicates does not change the list (using the expensive <code>nub</code> function which should be avoided in general).</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="ot">user_ids_unique ::</span> (<span class="dt">UserDal</span> dal) <span class="ot">=&gt;</span> dal <span class="ot">-&gt;</span> <span class="dt">IO</span> <span class="dt">Bool</span>
+user_ids_unique dal <span class="fu">=</span> <span class="kw">do</span>
+  userIds <span class="ot">&lt;-</span> fmap userId <span class="fu">&lt;$&gt;</span> getAllUsers dal
+  return <span class="fu">$</span> userIds <span class="fu">==</span> nub userIds</code></pre></div>
+<h1 id="testing-the-dal"><span class="header-section-number">5</span> Testing the DAL</h1>
+<!--
+\begin{code}
+{-# LANGUAGE OverloadedStrings #-}
+\end{code}
+-->
+<p>We will use Hspec to define a test specification for both UserDal implementations.</p>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="kw">module</span> <span class="dt">DalTest</span> <span class="kw">where</span>
+
+<span class="kw">import </span><span class="dt">Api.Data</span>
+<span class="kw">import </span><span class="dt">Api.Dal</span>
+<span class="kw">import </span><span class="dt">Prop.Api.Dal</span>
+<span class="kw">import </span><span class="dt">Test.Hspec</span></code></pre></div>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="ot">userDalSpec ::</span> <span class="dt">Spec</span>
+userDalSpec <span class="fu">=</span> <span class="kw">do</span>
+  describe <span class="st">&quot;Empty MockUserDal&quot;</span> <span class="fu">$</span> before (initMockUserDal <span class="dv">0</span> []) userDalProperties
+  describe <span class="st">&quot;Nonempty MockUserDal&quot;</span> <span class="fu">$</span> beforeAll (initMockUserDal <span class="dv">0</span> []) userDalActions
+  sqlProvider <span class="ot">&lt;-</span> runIO initSqlUserDal
+  describe <span class="st">&quot;Empty SqlUserDal&quot;</span> <span class="fu">$</span> before (return sqlProvider) userDalProperties
+  describe <span class="st">&quot;Nonempty SqlUserDal&quot;</span> <span class="fu">$</span> before (return sqlProvider) userDalActions
+
+<span class="ot">userDalProperties ::</span> (<span class="dt">UserDal</span> dal) <span class="ot">=&gt;</span> <span class="dt">SpecWith</span> (<span class="dt">DalProvider</span> dal)
+userDalProperties <span class="fu">=</span> <span class="kw">do</span>
+  specify <span class="st">&quot;all users in the user list are valid&quot;</span> <span class="fu">$</span> \p <span class="ot">-&gt;</span>
+    withProvider p user_list_has_valid_users <span class="ot">`shouldReturn`</span> <span class="dt">True</span>
+
+  specify <span class="st">&quot;user ids are unique&quot;</span> <span class="fu">$</span> \p <span class="ot">-&gt;</span>
+    withProvider p user_ids_unique <span class="ot">`shouldReturn`</span> <span class="dt">True</span>
+
+<span class="ot">userDalActions ::</span> (<span class="dt">UserDal</span> dal) <span class="ot">=&gt;</span> <span class="dt">SpecWith</span> (<span class="dt">DalProvider</span> dal)
+userDalActions <span class="fu">=</span> <span class="kw">do</span>
+  it <span class="st">&quot;adds a new user&quot;</span> <span class="fu">$</span> \p <span class="ot">-&gt;</span>
+    withProvider p (new_user_added (<span class="dt">NewUser</span> <span class="st">&quot;Test1&quot;</span> <span class="st">&quot;Test&quot;</span>)) <span class="ot">`shouldReturn`</span> <span class="dt">True</span>
+
+  it <span class="st">&quot;adds another new user&quot;</span> <span class="fu">$</span> \p <span class="ot">-&gt;</span>
+    withProvider p (new_user_added (<span class="dt">NewUser</span> <span class="st">&quot;Test2&quot;</span> <span class="st">&quot;Test&quot;</span>)) <span class="ot">`shouldReturn`</span> <span class="dt">True</span>
+
+  it <span class="st">&quot;has at least 2 users&quot;</span> <span class="fu">$</span> \p <span class="ot">-&gt;</span>
+    ((<span class="fu">&gt;=</span> <span class="dv">2</span>) <span class="fu">.</span> length <span class="fu">&lt;$&gt;</span> withProvider p getAllUsers) <span class="ot">`shouldReturn`</span> <span class="dt">True</span>
+
+  userDalProperties</code></pre></div>
+<h1 id="testing-the-api"><span class="header-section-number">6</span> Testing the API</h1>
+<div class="sourceCode"><pre class="sourceCode literate haskell"><code class="sourceCode haskell"><span class="ot">{-# LANGUAGE QuasiQuotes #-}</span>
+<span class="ot">{-# LANGUAGE OverloadedStrings #-}</span>
+<span class="ot">{-# LANGUAGE ScopedTypeVariables #-}</span>
+<span class="kw">module</span> <span class="dt">Main</span> (main) <span class="kw">where</span>
+
+<span class="kw">import </span><span class="dt">Lib</span> (serverApp, <span class="dt">ServerConf</span>(..))
+<span class="kw">import </span><span class="dt">Data.ByteString</span> (append)
+<span class="kw">import qualified</span> <span class="dt">Data.ByteString.Lazy</span> <span class="kw">as</span> <span class="dt">BSL</span>
+<span class="kw">import </span><span class="dt">Test.Hspec</span>
+<span class="kw">import </span><span class="dt">Test.Hspec.Wai</span>
+<span class="kw">import </span><span class="dt">Test.Hspec.Wai.Matcher</span>
+<span class="kw">import </span><span class="dt">Test.Hspec.Wai.JSON</span>
+<span class="kw">import </span><span class="dt">Network.HTTP.Types.Header</span> (<span class="dt">Header</span>)
+<span class="kw">import </span><span class="dt">Network.Wai.Test</span> (<span class="dt">SResponse</span>(..))
+
+<span class="kw">import </span><span class="dt">DalTest</span>
+
+<span class="ot">main ::</span> <span class="dt">IO</span> ()
+main <span class="fu">=</span> hspec <span class="fu">$</span> <span class="kw">do</span>
+  userDalSpec
+  apiSpec
+
+<span class="ot">login ::</span> <span class="dt">WaiSession</span> <span class="dt">SResponse</span>
+login <span class="fu">=</span> request <span class="st">&quot;POST&quot;</span> <span class="st">&quot;/login&quot;</span> [(<span class="st">&quot;Content-Type&quot;</span>, <span class="st">&quot;application/json&quot;</span>)] [json<span class="fu">|</span>{username<span class="fu">:</span><span class="st">&quot;user&quot;</span>,password<span class="fu">:</span><span class="st">&quot;password&quot;</span>}<span class="fu">|</span>]
+
+<span class="ot">getHeaders ::</span> <span class="dt">WaiSession</span> [<span class="dt">Header</span>]
+getHeaders <span class="fu">=</span> <span class="kw">do</span>
+  (<span class="dt">SResponse</span> _ _ token) <span class="ot">&lt;-</span> login
+  return [(<span class="st">&quot;Content-Type&quot;</span>, <span class="st">&quot;application/json&quot;</span>), (<span class="st">&quot;Authorization&quot;</span>, <span class="st">&quot;Bearer &quot;</span> <span class="ot">`append`</span> BSL.toStrict (stripQuotes token))]
+  <span class="kw">where</span> stripQuotes <span class="fu">=</span> BSL.init <span class="fu">.</span> BSL.tail
+
+<span class="ot">apiSpec ::</span> <span class="dt">Spec</span>
+apiSpec <span class="fu">=</span> beforeAll (serverApp (<span class="dt">ServerConf</span> <span class="st">&quot;default&quot;</span>)) <span class="fu">$</span> <span class="kw">do</span>
+  describe <span class="st">&quot;POST /login&quot;</span> <span class="fu">$</span>
+    it <span class="st">&quot;gets a JWT token&quot;</span> <span class="fu">$</span>
+      login <span class="ot">`shouldRespondWith`</span> <span class="dv">200</span>
+
+  describe <span class="st">&quot;GET /users [0]&quot;</span> <span class="fu">$</span>
+    it <span class="st">&quot;gets an empty list of users&quot;</span> <span class="fu">$</span> <span class="kw">do</span>
+      headers <span class="ot">&lt;-</span> getHeaders
+      request <span class="st">&quot;GET&quot;</span> <span class="st">&quot;/users&quot;</span> headers <span class="st">&quot;&quot;</span> <span class="ot">`shouldRespondWith`</span> <span class="st">&quot;{\&quot;status\&quot;:\&quot;success\&quot;,\&quot;data\&quot;:[]}&quot;</span>
+
+  describe <span class="st">&quot;POST /user&quot;</span> <span class="fu">$</span>
+    it <span class="st">&quot;adds a new user&quot;</span> <span class="fu">$</span> <span class="kw">do</span>
+      headers <span class="ot">&lt;-</span> getHeaders
+      <span class="kw">let</span> user <span class="fu">=</span> [json<span class="fu">|</span>{firstName<span class="fu">:</span><span class="st">&quot;Test&quot;</span>,lastName<span class="fu">:</span><span class="st">&quot;Test&quot;</span>}<span class="fu">|</span>]
+      request <span class="st">&quot;POST&quot;</span> <span class="st">&quot;/user&quot;</span> headers user <span class="ot">`shouldRespondWith`</span> <span class="st">&quot;{\&quot;status\&quot;:\&quot;success\&quot;,\&quot;data\&quot;:1}&quot;</span>
+
+  describe <span class="st">&quot;GET /users [1]&quot;</span> <span class="fu">$</span>
+    it <span class="st">&quot;gets list of one user&quot;</span> <span class="fu">$</span> <span class="kw">do</span>
+      headers <span class="ot">&lt;-</span> getHeaders
+      <span class="kw">let</span> users <span class="fu">=</span> [json<span class="fu">|</span>{status<span class="fu">:</span><span class="st">&quot;success&quot;</span>,<span class="kw">data</span><span class="fu">:</span>[{userId<span class="fu">:</span><span class="dv">1</span>,firstName<span class="fu">:</span><span class="st">&quot;Test&quot;</span>,lastName<span class="fu">:</span><span class="st">&quot;Test&quot;</span>}]}<span class="fu">|</span>]
+      request <span class="st">&quot;GET&quot;</span> <span class="st">&quot;/users&quot;</span> headers <span class="st">&quot;&quot;</span> <span class="ot">`shouldRespondWith`</span> <span class="dt">ResponseMatcher</span> <span class="dv">200</span> [] (bodyEquals users)</code></pre></div>
+</body>
+</html>

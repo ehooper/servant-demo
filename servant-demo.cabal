@@ -1,0 +1,65 @@
+name:                servant-demo
+version:             0.1.0.0
+-- synopsis:
+-- description:
+homepage:            https://github.com/githubuser/servant-demo#readme
+license:             BSD3
+license-file:        LICENSE
+author:              Evan Hooper
+maintainer:          ehooper@umich.edu
+copyright:           2017 Evan Hooper
+category:            Web
+build-type:          Simple
+extra-source-files:  README.md
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Lib, Api.Data, Api.Dal
+  build-depends:       aeson
+                     , base >= 4.7 && < 5
+                     , bytestring
+                     , hslogger
+                     , lens
+                     , mtl
+                     , optparse-applicative
+                     , servant-auth-server >= 0.3.0.0
+                     , servant-server
+                     , servant-swagger
+                     , sqlite-simple
+                     , swagger2
+                     , text
+                     , wai
+                     , warp
+                     , yaml
+  default-language:    Haskell2010
+
+executable servant-demo-exe
+  hs-source-dirs:      app
+  main-is:             Main.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , servant-demo
+  default-language:    Haskell2010
+
+test-suite servant-demo-test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  other-modules:       Prop.Api.Dal, DalTest
+  main-is:             Spec.hs
+  build-depends:       QuickCheck
+                     , aeson
+                     , base
+                     , bytestring
+                     , hspec
+                     , hspec-wai
+                     , hspec-wai-json
+                     , http-types
+                     , servant-demo
+                     , wai-extra
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  default-language:    Haskell2010
+
+source-repository head
+  type:     git
+  location: https://github.com/githubuser/servant-demo
